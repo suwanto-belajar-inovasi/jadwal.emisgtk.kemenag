@@ -68,7 +68,6 @@
         </nav>
 
         <div class="container my-4">
-            
             <div id="viewInput">
                 <div class="card mb-4">
                     <div class="card-body">
@@ -148,7 +147,7 @@
     </div>
 
     <script>
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPA6muRu16SEEOaZyR4YgdkTeYN5P2hZtH4bzr_irm8iresVt3byo5vXzWlqWn4K43/exec'; // === UPDATE URL INI ===
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPA6muRu16SEEOaZyR4YgdkTeYN5P2hZtH4bzr_irm8iresVt3byo5vXzWlqWn4K43/exec'; // === UPDATE URL INI NANTI ===
         let appData = { madrasah: '', ssId: '', ref: {}, jadwalGlobal: [] };
 
         const headersPTK = ['ID PTK', 'Nama', 'NUPTK', 'NIK', 'Status', 'Fungsi'];
@@ -237,6 +236,9 @@
             $('.sel2-mapel').select2({ placeholder: "Ketik Nama Mapel...", data: appData.ref.mapel.map(m => ({id: m['ID Mapel'], text: m['Nama Mata Pelajaran']})) });
             $('.sel2-ptk').select2({ placeholder: "Ketik Nama Guru...", data: appData.ref.ptk.map(p => ({id: p['ID PTK'], text: p['Nama']})) });
 
+            // Fitur Baru: Auto-Load Data Jadwal saat Hari / Rombel dipilih
+            $('#selectHari, #selectRombel').on('change', loadExistingJadwal);
+
             $('.sel2-ptk').on('select2:select', function (e) {
                 let guruPilih = e.params.data.id;
                 let namaGuru = e.params.data.text;
@@ -248,6 +250,35 @@
                 if(bentrok) {
                     Swal.fire({ icon: 'error', title: 'Jadwal Bentrok!', text: `${namaGuru} sudah memiliki jadwal di ${bentrok['Rombel']} pada Jam ke-${jamTabel} hari ${hariTabel}.` });
                     $(this).val(null).trigger('change'); 
+                }
+            });
+        }
+
+        // FUNGSI BARU: Mengisi form dengan data yang sudah tersimpan
+        function loadExistingJadwal() {
+            let hari = $('#selectHari').val();
+            let rombel = $('#selectRombel').val();
+
+            // Reset seluruh isian tabel terlebih dahulu
+            $('.sel2-mapel').val(null).trigger('change');
+            $('.sel2-ptk').val(null).trigger('change');
+
+            if (!hari || !rombel) return;
+
+            // Cari jadwal yang cocok dengan hari dan rombel yang dipilih
+            let existing = appData.jadwalGlobal.filter(j => j['Hari'] === hari && j['Rombel'] === rombel);
+
+            // Isikan ke dalam tabel
+            existing.forEach(j => {
+                let jam = j['Jam ke'];
+                let idMapel = j['ID Mapel'];
+                let idPtk = j['ID PTK'];
+
+                let $row = $(`.tr-jadwal[data-jam='${jam}']`);
+                if ($row.length > 0) {
+                    // Update value select2 tanpa memicu alert bentrok
+                    $row.find('.sel2-mapel').val(idMapel).trigger('change');
+                    $row.find('.sel2-ptk').val(idPtk).trigger('change');
                 }
             });
         }
@@ -265,7 +296,7 @@
                 let idMapel = $(this).find('.sel2-mapel').val();
                 let idPtk = $(this).find('.sel2-ptk').val();
 
-                if(idMapel && idPtk) dataJadwal.push({ jam, idMapel, idPtk }); // Data disimpan ke backend tanpa merekam nama langsung, murni ID.
+                if(idMapel && idPtk) dataJadwal.push({ jam, idMapel, idPtk }); 
             });
 
             if(dataJadwal.length === 0) return Swal.fire('Info', 'Belum ada jadwal yang diisi.', 'info');
@@ -277,12 +308,12 @@
             
             if(res.status === 'success') {
                 Swal.fire('Sukses', 'Jadwal berhasil disimpan.', 'success');
+                // Refresh data jadwal di memori agar perubahan langsung terlihat
                 let refresh = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getData', ssId: appData.ssId }) }).then(r=>r.json());
                 appData.jadwalGlobal = refresh.jadwal;
             }
         }
 
-        // PERBAIKAN: Look-up / Mapping Data untuk Dashboard Secara Real-time
         function renderDashboard() {
             let tbody = '';
             let sorted = appData.jadwalGlobal.sort((a, b) => a['Hari'].localeCompare(b['Hari']) || a['Rombel'].localeCompare(b['Rombel']) || a['Jam ke'] - b['Jam ke']);
@@ -291,11 +322,9 @@
                 let idMapel = j['ID Mapel'];
                 let idPtk = j['ID PTK'];
                 
-                // Cari Nama Mapel Berdasarkan ID Mapel di file Referensi
                 let objMapel = appData.ref.mapel.find(m => m['ID Mapel'] == idMapel);
                 let namaMapelTampil = objMapel ? objMapel['Nama Mata Pelajaran'] : idMapel;
                 
-                // Cari Nama Guru Berdasarkan ID PTK di file Referensi
                 let objPtk = appData.ref.ptk.find(p => p['ID PTK'] == idPtk);
                 let namaPtkTampil = objPtk ? objPtk['Nama'] : idPtk;
 
@@ -310,7 +339,6 @@
             $('#tabelDashboard tbody').html(tbody);
         }
 
-        // PERBAIKAN: Memanggil Endpoint Download Excel Khusus
         async function downloadExcel() {
             showLoading('Menyiapkan file Excel (Memisahkan sheet Jadwal)...');
             try {
@@ -319,7 +347,6 @@
                 hideLoading();
                 
                 if(res.status === 'success') {
-                    // Membuka tab baru yang secara otomatis mengunduh file
                     window.open(res.url, '_blank');
                 } else {
                     Swal.fire('Gagal', res.message, 'error');

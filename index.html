@@ -18,6 +18,7 @@
         .select2-container .select2-selection--single { height: 38px; line-height: 38px; border: 1px solid #dee2e6; }
         .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 38px; }
         .loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; }
+        .ref-input { min-width: 120px; }
     </style>
 </head>
 <body>
@@ -57,8 +58,9 @@
                 </button>
                 <div class="collapse navbar-collapse" id="navbarNav">
                     <ul class="navbar-nav me-auto">
-                        <li class="nav-item"><a class="nav-link active" href="#" onclick="switchMenu('input')">Input Jadwal</a></li>
-                        <li class="nav-item"><a class="nav-link" href="#" onclick="switchMenu('dashboard'); renderDashboard();">Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link active" href="#" id="nav-input" onclick="switchMenu('input')">Input Jadwal</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#" id="nav-dashboard" onclick="switchMenu('dashboard')">Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#" id="nav-referensi" onclick="switchMenu('referensi')">Edit Referensi</a></li>
                     </ul>
                     <button class="btn btn-danger btn-sm" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Keluar</button>
                 </div>
@@ -117,14 +119,43 @@
                 </div>
             </div>
 
+            <div id="viewReferensi" class="hidden">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Manajemen Data Referensi</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3 d-flex gap-2">
+                            <button class="btn btn-outline-primary active" id="btnRefPTK" onclick="renderTableReferensi('ptk')"><i class="fas fa-users"></i> Daftar Guru (PTK)</button>
+                            <button class="btn btn-outline-primary" id="btnRefRombel" onclick="renderTableReferensi('rombel')"><i class="fas fa-chalkboard"></i> Daftar Rombel</button>
+                        </div>
+                        
+                        <div class="table-responsive mb-3">
+                            <table class="table table-bordered">
+                                <thead class="table-light" id="theadRef"></thead>
+                                <tbody id="tbodyRef"></tbody>
+                            </table>
+                            <button class="btn btn-sm btn-success" onclick="tambahBarisRef()"><i class="fas fa-plus"></i> Tambah Baris Baru</button>
+                        </div>
+
+                        <div class="alert alert-info py-2"><small><i class="fas fa-info-circle"></i> Pastikan Anda mengklik "Simpan Perubahan" setelah mengedit atau menambah baris.</small></div>
+                        <button class="btn btn-primary w-100" onclick="simpanReferensi()"><i class="fas fa-save"></i> Simpan Perubahan Database</button>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
     <script>
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPA6muRu16SEEOaZyR4YgdkTeYN5P2hZtH4bzr_irm8iresVt3byo5vXzWlqWn4K43/exec'; 
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPA6muRu16SEEOaZyR4YgdkTeYN5P2hZtH4bzr_irm8iresVt3byo5vXzWlqWn4K43/exec'; // UPDATE URL INI NANTI
         let appData = { madrasah: '', ssId: '', ref: {}, jadwalGlobal: [] };
 
-        // Cek Session saat reload
+        // Konfigurasi Header Referensi (Harus sesuai dengan template)
+        const headersPTK = ['ID PTK', 'Nama', 'NUPTK', 'NIK', 'Status', 'Fungsi'];
+        const headersRombel = ['Nama Rombel', 'Tingkat/Kelas', 'Singkatan'];
+        let currentRefType = 'ptk';
+
         window.onload = () => {
             const savedSession = localStorage.getItem('jadwalSession');
             if(savedSession) {
@@ -147,7 +178,7 @@
         async function register() {
             let user = $('#regUser').val(), pass = $('#regPass').val(), madrasah = $('#regMadrasah').val();
             if(!user || !pass || !madrasah) return Swal.fire('Error', 'Isi semua data!', 'warning');
-            showLoading('Membuat Database Madrasah...');
+            showLoading('Membuat Database Madrasah di Folder...');
             let res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'register', username: user, password: pass, madrasah: madrasah }) }).then(r=>r.json());
             hideLoading();
             if(res.status === 'success') { Swal.fire('Berhasil', res.message, 'success'); toggleAuth('login'); }
@@ -182,16 +213,20 @@
         }
 
         function switchMenu(menu) {
-            if(menu==='input') { $('#viewDashboard').addClass('hidden'); $('#viewInput').removeClass('hidden'); }
-            else { $('#viewInput').addClass('hidden'); $('#viewDashboard').removeClass('hidden'); }
+            $('#viewInput, #viewDashboard, #viewReferensi').addClass('hidden');
+            $('.nav-link').removeClass('active');
+            
+            if(menu === 'input') { $('#viewInput').removeClass('hidden'); $('#nav-input').addClass('active'); }
+            else if(menu === 'dashboard') { $('#viewDashboard').removeClass('hidden'); $('#nav-dashboard').addClass('active'); renderDashboard(); }
+            else if(menu === 'referensi') { $('#viewReferensi').removeClass('hidden'); $('#nav-referensi').addClass('active'); renderTableReferensi('ptk'); }
         }
 
         function buildInterface() {
-            // Isi Rombel
+            // Dropdown Rombel
             $('#selectRombel').empty().append('<option value="">-- Pilih Rombel --</option>');
             appData.ref.rombel.forEach(r => $('#selectRombel').append(`<option value="${r['Nama Rombel']}" data-kelas="${r['Tingkat/Kelas']}">${r['Nama Rombel']}</option>`));
 
-            // Buat Baris Tabel Input
+            // Baris Tabel Input Jadwal
             let tbody = '';
             for(let i=1; i<=10; i++) {
                 tbody += `<tr class="tr-jadwal" data-jam="${i}">
@@ -202,11 +237,11 @@
             }
             $('#tbodyJadwal').html(tbody);
 
-            // Inisialisasi Select2 (Filter Pencarian Rekomendasi)
+            // Inisialisasi Select2
             $('.sel2-mapel').select2({ placeholder: "Ketik Nama Mapel...", data: appData.ref.mapel.map(m => ({id: m['ID Mapel'], text: m['Nama Mata Pelajaran']})) });
             $('.sel2-ptk').select2({ placeholder: "Ketik Nama Guru...", data: appData.ref.ptk.map(p => ({id: p['ID PTK'], text: p['Nama']})) });
 
-            // DETEKSI BENTROK SAAT GURU DIPILIH
+            // Deteksi Bentrok
             $('.sel2-ptk').on('select2:select', function (e) {
                 let guruPilih = e.params.data.id;
                 let namaGuru = e.params.data.text;
@@ -214,12 +249,10 @@
                 let hariTabel = $('#selectHari').val();
                 let rombelSkrg = $('#selectRombel').val();
 
-                // Cek dengan Jadwal Global (dari Database + yang belum di-save jika mau lebih ketat)
                 let bentrok = appData.jadwalGlobal.find(j => j['Hari'] == hariTabel && j['Jam ke'] == jamTabel && j['ID PTK'] == guruPilih && j['Rombel'] != rombelSkrg);
-                
                 if(bentrok) {
                     Swal.fire({ icon: 'error', title: 'Jadwal Bentrok!', text: `${namaGuru} sudah memiliki jadwal di ${bentrok['Rombel']} pada Jam ke-${jamTabel} hari ${hariTabel}.` });
-                    $(this).val(null).trigger('change'); // Batalkan pilihan
+                    $(this).val(null).trigger('change'); 
                 }
             });
         }
@@ -250,8 +283,7 @@
             hideLoading();
             
             if(res.status === 'success') {
-                Swal.fire('Sukses', 'Jadwal berhasil disimpan & dirender.', 'success');
-                // Refresh Jadwal Global di memori
+                Swal.fire('Sukses', 'Jadwal berhasil disimpan.', 'success');
                 let refresh = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getData', ssId: appData.ssId }) }).then(r=>r.json());
                 appData.jadwalGlobal = refresh.jadwal;
             }
@@ -259,7 +291,6 @@
 
         function renderDashboard() {
             let tbody = '';
-            // Mengurutkan jadwalGlobal berdasarkan Hari, Rombel, Jam
             let sorted = appData.jadwalGlobal.sort((a, b) => a['Hari'].localeCompare(b['Hari']) || a['Rombel'].localeCompare(b['Rombel']) || a['Jam ke'] - b['Jam ke']);
             
             sorted.forEach(j => {
@@ -269,9 +300,95 @@
         }
 
         function downloadExcel() {
-            // Direct Link Google Sheets untuk konversi otomatis ke .xlsx (Berisi semua sheet Senin-Sabtu dalam 1 file)
             let exportUrl = `https://docs.google.com/spreadsheets/d/${appData.ssId}/export?format=xlsx`;
             window.open(exportUrl, '_blank');
+        }
+
+        // --- MANAJEMEN REFERENSI ---
+        function renderTableReferensi(type) {
+            currentRefType = type;
+            $('#btnRefPTK').toggleClass('active', type === 'ptk');
+            $('#btnRefRombel').toggleClass('active', type === 'rombel');
+
+            let headers = type === 'ptk' ? headersPTK : headersRombel;
+            let data = type === 'ptk' ? appData.ref.ptk : appData.ref.rombel;
+
+            // Header Tabel
+            let thHtml = '<tr><th>No</th>';
+            headers.forEach(h => thHtml += `<th>${h}</th>`);
+            thHtml += '<th>Aksi</th></tr>';
+            $('#theadRef').html(thHtml);
+
+            // Body Tabel
+            let tbHtml = '';
+            data.forEach((row, idx) => {
+                tbHtml += `<tr><td class="text-center align-middle">${idx + 1}</td>`;
+                headers.forEach(h => {
+                    tbHtml += `<td><input type="text" class="form-control ref-input" value="${row[h] || ''}"></td>`;
+                });
+                tbHtml += `<td class="text-center"><button class="btn btn-sm btn-danger" onclick="$(this).closest('tr').remove()"><i class="fas fa-trash"></i></button></td></tr>`;
+            });
+            $('#tbodyRef').html(tbHtml);
+        }
+
+        function tambahBarisRef() {
+            let headers = currentRefType === 'ptk' ? headersPTK : headersRombel;
+            let rowCount = $('#tbodyRef tr').length + 1;
+            let tbHtml = `<tr><td class="text-center align-middle">*</td>`;
+            headers.forEach(h => {
+                // Untuk Kolom ID PTK, otomatis berikan ID Random agar unik
+                let val = (h === 'ID PTK') ? 'PTK' + Math.floor(Math.random() * 10000) : '';
+                tbHtml += `<td><input type="text" class="form-control ref-input" value="${val}"></td>`;
+            });
+            tbHtml += `<td class="text-center"><button class="btn btn-sm btn-danger" onclick="$(this).closest('tr').remove()"><i class="fas fa-trash"></i></button></td></tr>`;
+            $('#tbodyRef').append(tbHtml);
+        }
+
+        async function simpanReferensi() {
+            let headers = currentRefType === 'ptk' ? headersPTK : headersRombel;
+            let sheetName = currentRefType === 'ptk' ? 'Daftar_PTK' : 'Daftar_Rombel';
+            
+            let dataToSave = [];
+            dataToSave.push(headers); // Baris 1: Header
+
+            // Ambil data dari input box di tabel
+            $('#tbodyRef tr').each(function() {
+                let row = [];
+                let isRowEmpty = true;
+                $(this).find('.ref-input').each(function() {
+                    let val = $(this).val().trim();
+                    row.push(val);
+                    if(val !== '') isRowEmpty = false;
+                });
+                if(!isRowEmpty) dataToSave.push(row);
+            });
+
+            showLoading(`Menyimpan Data ${sheetName.replace('_', ' ')}...`);
+            let payload = { action: 'saveReference', ssId: appData.ssId, sheetName: sheetName, data: dataToSave };
+            
+            try {
+                let res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) }).then(r=>r.json());
+                
+                if(res.status === 'success') {
+                    // Update data lokal di memori agar dropdown terupdate tanpa perlu reload halaman
+                    let refresh = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getData', ssId: appData.ssId }) }).then(r=>r.json());
+                    appData.ref = { ptk: refresh.ptk, mapel: refresh.mapel, rombel: refresh.rombel };
+                    appData.jadwalGlobal = refresh.jadwal;
+                    
+                    hideLoading();
+                    Swal.fire('Sukses', res.message, 'success');
+                    
+                    // Render ulang dropdown jadwal dan tabel referensi
+                    buildInterface(); 
+                    renderTableReferensi(currentRefType);
+                } else {
+                    hideLoading();
+                    Swal.fire('Error', res.message, 'error');
+                }
+            } catch(e) {
+                hideLoading();
+                Swal.fire('Koneksi Gagal', 'Pastikan koneksi internet stabil.', 'error');
+            }
         }
     </script>
 </body>

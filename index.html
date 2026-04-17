@@ -106,7 +106,7 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Hasil Jadwal Seluruh Rombel</h5>
-                        <button class="btn btn-success" onclick="downloadExcel()"><i class="fas fa-file-excel"></i> Download Excel</button>
+                        <button class="btn btn-success" onclick="downloadExcel()"><i class="fas fa-file-excel"></i> Download Excel (Hanya Jadwal)</button>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -148,10 +148,9 @@
     </div>
 
     <script>
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPA6muRu16SEEOaZyR4YgdkTeYN5P2hZtH4bzr_irm8iresVt3byo5vXzWlqWn4K43/exec'; // UPDATE URL INI NANTI
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPA6muRu16SEEOaZyR4YgdkTeYN5P2hZtH4bzr_irm8iresVt3byo5vXzWlqWn4K43/exec'; // === UPDATE URL INI ===
         let appData = { madrasah: '', ssId: '', ref: {}, jadwalGlobal: [] };
 
-        // Konfigurasi Header Referensi (Harus sesuai dengan template)
         const headersPTK = ['ID PTK', 'Nama', 'NUPTK', 'NIK', 'Status', 'Fungsi'];
         const headersRombel = ['Nama Rombel', 'Tingkat/Kelas', 'Singkatan'];
         let currentRefType = 'ptk';
@@ -222,11 +221,9 @@
         }
 
         function buildInterface() {
-            // Dropdown Rombel
             $('#selectRombel').empty().append('<option value="">-- Pilih Rombel --</option>');
             appData.ref.rombel.forEach(r => $('#selectRombel').append(`<option value="${r['Nama Rombel']}" data-kelas="${r['Tingkat/Kelas']}">${r['Nama Rombel']}</option>`));
 
-            // Baris Tabel Input Jadwal
             let tbody = '';
             for(let i=1; i<=10; i++) {
                 tbody += `<tr class="tr-jadwal" data-jam="${i}">
@@ -237,11 +234,9 @@
             }
             $('#tbodyJadwal').html(tbody);
 
-            // Inisialisasi Select2
             $('.sel2-mapel').select2({ placeholder: "Ketik Nama Mapel...", data: appData.ref.mapel.map(m => ({id: m['ID Mapel'], text: m['Nama Mata Pelajaran']})) });
             $('.sel2-ptk').select2({ placeholder: "Ketik Nama Guru...", data: appData.ref.ptk.map(p => ({id: p['ID PTK'], text: p['Nama']})) });
 
-            // Deteksi Bentrok
             $('.sel2-ptk').on('select2:select', function (e) {
                 let guruPilih = e.params.data.id;
                 let namaGuru = e.params.data.text;
@@ -269,10 +264,8 @@
                 let jam = $(this).data('jam');
                 let idMapel = $(this).find('.sel2-mapel').val();
                 let idPtk = $(this).find('.sel2-ptk').val();
-                let txtMapel = $(this).find('.sel2-mapel option:selected').text();
-                let txtPtk = $(this).find('.sel2-ptk option:selected').text();
 
-                if(idMapel && idPtk) dataJadwal.push({ jam, idMapel, idPtk, namaMapel: txtMapel, namaPtk: txtPtk });
+                if(idMapel && idPtk) dataJadwal.push({ jam, idMapel, idPtk }); // Data disimpan ke backend tanpa merekam nama langsung, murni ID.
             });
 
             if(dataJadwal.length === 0) return Swal.fire('Info', 'Belum ada jadwal yang diisi.', 'info');
@@ -289,19 +282,52 @@
             }
         }
 
+        // PERBAIKAN: Look-up / Mapping Data untuk Dashboard Secara Real-time
         function renderDashboard() {
             let tbody = '';
             let sorted = appData.jadwalGlobal.sort((a, b) => a['Hari'].localeCompare(b['Hari']) || a['Rombel'].localeCompare(b['Rombel']) || a['Jam ke'] - b['Jam ke']);
             
             sorted.forEach(j => {
-                tbody += `<tr><td>${j['Hari']||'-'}</td><td>${j['Rombel']||'-'}</td><td>${j['Jam ke']||'-'}</td><td>${j['Nama Mapel']||'-'}</td><td>${j['Nama PTK']||'-'}</td></tr>`;
+                let idMapel = j['ID Mapel'];
+                let idPtk = j['ID PTK'];
+                
+                // Cari Nama Mapel Berdasarkan ID Mapel di file Referensi
+                let objMapel = appData.ref.mapel.find(m => m['ID Mapel'] == idMapel);
+                let namaMapelTampil = objMapel ? objMapel['Nama Mata Pelajaran'] : idMapel;
+                
+                // Cari Nama Guru Berdasarkan ID PTK di file Referensi
+                let objPtk = appData.ref.ptk.find(p => p['ID PTK'] == idPtk);
+                let namaPtkTampil = objPtk ? objPtk['Nama'] : idPtk;
+
+                tbody += `<tr>
+                            <td>${j['Hari']||'-'}</td>
+                            <td>${j['Rombel']||'-'}</td>
+                            <td>${j['Jam ke']||'-'}</td>
+                            <td class="fw-bold text-primary">${namaMapelTampil||'-'}</td>
+                            <td>${namaPtkTampil||'-'}</td>
+                          </tr>`;
             });
             $('#tabelDashboard tbody').html(tbody);
         }
 
-        function downloadExcel() {
-            let exportUrl = `https://docs.google.com/spreadsheets/d/${appData.ssId}/export?format=xlsx`;
-            window.open(exportUrl, '_blank');
+        // PERBAIKAN: Memanggil Endpoint Download Excel Khusus
+        async function downloadExcel() {
+            showLoading('Menyiapkan file Excel (Memisahkan sheet Jadwal)...');
+            try {
+                let payload = { action: 'generateExcel', ssId: appData.ssId, madrasah: appData.madrasah };
+                let res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) }).then(r=>r.json());
+                hideLoading();
+                
+                if(res.status === 'success') {
+                    // Membuka tab baru yang secara otomatis mengunduh file
+                    window.open(res.url, '_blank');
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
+                }
+            } catch(e) {
+                hideLoading();
+                Swal.fire('Error', 'Gagal memproses file Excel.', 'error');
+            }
         }
 
         // --- MANAJEMEN REFERENSI ---
@@ -313,13 +339,11 @@
             let headers = type === 'ptk' ? headersPTK : headersRombel;
             let data = type === 'ptk' ? appData.ref.ptk : appData.ref.rombel;
 
-            // Header Tabel
             let thHtml = '<tr><th>No</th>';
             headers.forEach(h => thHtml += `<th>${h}</th>`);
             thHtml += '<th>Aksi</th></tr>';
             $('#theadRef').html(thHtml);
 
-            // Body Tabel
             let tbHtml = '';
             data.forEach((row, idx) => {
                 tbHtml += `<tr><td class="text-center align-middle">${idx + 1}</td>`;
@@ -333,10 +357,8 @@
 
         function tambahBarisRef() {
             let headers = currentRefType === 'ptk' ? headersPTK : headersRombel;
-            let rowCount = $('#tbodyRef tr').length + 1;
             let tbHtml = `<tr><td class="text-center align-middle">*</td>`;
             headers.forEach(h => {
-                // Untuk Kolom ID PTK, otomatis berikan ID Random agar unik
                 let val = (h === 'ID PTK') ? 'PTK' + Math.floor(Math.random() * 10000) : '';
                 tbHtml += `<td><input type="text" class="form-control ref-input" value="${val}"></td>`;
             });
@@ -349,9 +371,8 @@
             let sheetName = currentRefType === 'ptk' ? 'Daftar_PTK' : 'Daftar_Rombel';
             
             let dataToSave = [];
-            dataToSave.push(headers); // Baris 1: Header
+            dataToSave.push(headers); 
 
-            // Ambil data dari input box di tabel
             $('#tbodyRef tr').each(function() {
                 let row = [];
                 let isRowEmpty = true;
@@ -370,7 +391,6 @@
                 let res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) }).then(r=>r.json());
                 
                 if(res.status === 'success') {
-                    // Update data lokal di memori agar dropdown terupdate tanpa perlu reload halaman
                     let refresh = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getData', ssId: appData.ssId }) }).then(r=>r.json());
                     appData.ref = { ptk: refresh.ptk, mapel: refresh.mapel, rombel: refresh.rombel };
                     appData.jadwalGlobal = refresh.jadwal;
@@ -378,7 +398,6 @@
                     hideLoading();
                     Swal.fire('Sukses', res.message, 'success');
                     
-                    // Render ulang dropdown jadwal dan tabel referensi
                     buildInterface(); 
                     renderTableReferensi(currentRefType);
                 } else {

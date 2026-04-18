@@ -367,11 +367,9 @@
             $('#tabelDashboard tbody').html(tbody);
         }
 
-        // FUNGSI BARU: Render JTM (Jam Total Mengajar)
         function renderJTM() {
             let jtmMap = {};
             
-            // Hitung total jam per PTK
             appData.jadwalGlobal.forEach(j => {
                 let idPtk = j['ID PTK'];
                 if(idPtk) {
@@ -383,7 +381,6 @@
             let tbody = '';
             let no = 1;
 
-            // List semua guru dari referensi dan sandingkan dengan total jamnya
             appData.ref.ptk.forEach(p => {
                 let nama = p['Nama'];
                 let id = p['ID PTK'];
@@ -416,7 +413,6 @@
             }
         }
 
-        // --- MANAJEMEN REFERENSI ---
         function renderTableReferensi(type) {
             currentRefType = type;
             $('#btnRefPTK').toggleClass('active', type === 'ptk');
